@@ -3,27 +3,24 @@ const bodyParser = require('body-parser');
 const mysql = require('mysql2/promise');
 
 const app = express();
-
-// Middleware to parse JSON bodies
 app.use(bodyParser.json());
 
-// MySQL credentials
 const dbConfig = {
   host: 'mysql.default.svc.cluster.local',
   user: process.env.MYSQL_USERNAME,
   password: process.env.MYSQL_PASSWORD,
-  database: process.env.MYSQL_DATABASE, // Read database name from environment variable
-  table: process.env.MYSQL_TABLE // Read table name from environment variable
+  database: process.env.MYSQL_DATABASE, 
+  table: process.env.MYSQL_TABLE 
 };
-let pool; // Declare pool variable outside connect function
 
-// Create MySQL connection
-async function connectToMySQL() {
+let pool; 
+let databaseInitialized = false; // Flag to track initialization
+
+async function initializeDatabase() {
+  if (databaseInitialized) return; // Do nothing if already initialized
+
   try {
     pool = await mysql.createPool(dbConfig);
-    console.log('Connected to MySQL database');
-
-    // Use pool.execute for database interactions
     await pool.query(`CREATE DATABASE IF NOT EXISTS ${dbConfig.database}`);
     await pool.query(`USE ${dbConfig.database}`);
     await pool.execute(`
@@ -33,34 +30,25 @@ async function connectToMySQL() {
         last_name VARCHAR(255)
       )
     `);
-    console.log(`Table ${dbConfig.table} created or already exists`);
+    console.log(`Database and table initialized`);
+    databaseInitialized = true;
   } catch (err) {
-    console.error('Error connecting to MySQL:', err.code, err.message);
-    // Consider adding more robust error handling here (e.g., retries, graceful shutdown)
+    console.error('Error initializing database:', err.code, err.message);
+    // Handle error gracefully (e.g., retry, send error response)
   }
 }
 
-connectToMySQL();
+
 
 // API endpoint to handle form submission
 app.post('/submit', async (req, res) => {
-  try {
-    const { firstName, lastName } = req.body;
-
-    // Use pool.execute for the insert
-    await pool.execute(`
-      INSERT INTO ${dbConfig.table} (first_name, last_name) VALUES (?, ?)
-    `, [firstName, lastName]);
-
-    res.json({ message: 'Data saved to database successfully' });
-  } catch (err) {
-    console.error('Error inserting data into MySQL:', err.code, err.message); // Log the error code as well
-    res.status(500).json({ message: 'Error saving data to database', details: err.message }); 
-  }
+  await initializeDatabase(); // Call initialization before processing submission
+  // ... (rest of your form submission logic)
 });
 
-// Health check endpoint
-app.get('/', (req, res) => {
+// Health check endpoint (also initializes the database)
+app.get('/', async (req, res) => {
+  await initializeDatabase();
   res.send('Backend service is running!');
 });
 
