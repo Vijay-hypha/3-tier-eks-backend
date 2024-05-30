@@ -30,7 +30,7 @@ async function connectToMySQL() {
       CREATE TABLE IF NOT EXISTS ${dbConfig.table} (
         id INT AUTO_INCREMENT PRIMARY KEY,
         first_name VARCHAR(255),
-        last_name VARCHAR(255)
+        last_name VARCHAR(254)
       )
     `);
     console.log(`Table ${dbConfig.table} created or already exists`);
