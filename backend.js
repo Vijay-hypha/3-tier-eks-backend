@@ -5,55 +5,49 @@ const mysql = require('mysql2/promise');
 const app = express();
 app.use(bodyParser.json());
 
+// MySQL configuration (no default table)
 const dbConfig = {
   host: 'mysql.default.svc.cluster.local',
   user: process.env.MYSQL_USERNAME,
   password: process.env.MYSQL_PASSWORD,
-  database: process.env.MYSQL_DATABASE, 
-  table: process.env.MYSQL_TABLE 
 };
 
-let pool; 
-let databaseInitialized = false; // Flag to track initialization
+// API endpoint to handle form submission
+app.post('/submit', async (req, res) => {
+  const { firstName, lastName, database, table } = req.body;
 
-async function initializeDatabase() {
-  if (databaseInitialized) return; // Do nothing if already initialized
+  if (!database || !table) {
+    return res.status(400).json({ message: 'Database and table names are required.' });
+  }
 
   try {
-    pool = await mysql.createPool(dbConfig);
-    await pool.query(`CREATE DATABASE IF NOT EXISTS ${dbConfig.database}`);
-    await pool.query(`USE ${dbConfig.database}`);
+    // Create a new connection pool for each request
+    const pool = await mysql.createPool({ ...dbConfig, database });
+
+    // Ensure database and table exist
+    await pool.query(`CREATE DATABASE IF NOT EXISTS ${database}`);
+    await pool.query(`USE ${database}`);
     await pool.execute(`
-      CREATE TABLE IF NOT EXISTS ${dbConfig.table} (
+      CREATE TABLE IF NOT EXISTS ${table} (
         id INT AUTO_INCREMENT PRIMARY KEY,
         first_name VARCHAR(255),
         last_name VARCHAR(255)
       )
     `);
-    console.log(`Database and table initialized`);
-    databaseInitialized = true;
+
+    // Insert data
+    await pool.execute(`
+      INSERT INTO ${table} (first_name, last_name) VALUES (?, ?)
+    `, [firstName, lastName]);
+
+    // End the connection
+    pool.end();
+
+    res.json({ message: 'Data saved to database successfully' });
   } catch (err) {
-    console.error('Error initializing database:', err.code, err.message);
-    // Handle error gracefully (e.g., retry, send error response)
+    console.error('MySQL error:', err.code, err.message);
+    res.status(500).json({ message: 'Error saving data to database', error: err.message });
   }
-}
-
-
-
-// API endpoint to handle form submission
-app.post('/submit', async (req, res) => {
-  await initializeDatabase(); // Call initialization before processing submission
-  // ... (rest of your form submission logic)
 });
 
-// Health check endpoint (also initializes the database)
-app.get('/', async (req, res) => {
-  await initializeDatabase();
-  res.send('Backend service is running!');
-});
-
-// Start the server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
-});
+// ... (rest of the code: health check, server start)
